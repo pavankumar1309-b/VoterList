@@ -25,6 +25,19 @@ const FIELD_PATTERNS: Array<{ field: CanonicalField; patterns: RegExp[]; antiPat
     ],
   },
   {
+    field: 'name',
+    patterns: [
+      /^(voter|elector|full|citizen|person|member|applicant)('?s)?(\s*|_|-)?name$/i,
+      /^name(\s*of(\s*the)?\s*(voter|elector))?$/i,
+      /^(first|given)(\s*|_|-)?name$/i,
+      /^(v|e|fm|c)(\s*|_|-)?name$/i,
+      /^name(\s*\(.*\))?$/i,
+    ],
+    antiPatterns: [
+      /father|mother|husband|wife|spouse|guardian|relative|relation|rln|polling|station|booth|constituency|district|file|sheet|ward|village|street|colony|area|locality/i,
+    ],
+  },
+  {
     field: 'motherName',
     patterns: [/^mother('?s)?(\s*|_|-)?(name)?$/i, /mother\s*name/i],
   },
@@ -34,18 +47,9 @@ const FIELD_PATTERNS: Array<{ field: CanonicalField; patterns: RegExp[]; antiPat
       /^father('?s)?(\s*|_|-)?(name)?$/i,
       /^husband('?s)?(\s*|_|-)?(name)?$/i,
       /^father\s*\/?\s*husband('?s)?(\s*|_|-)?(name)?$/i,
-      /^(guardian|relative|relation|rln)(\s*|_|-)?(name)?$/i,
-      /father|husband|guardian|relative\s*name|rln_name/i,
+      /^(guardian|relative|relation|rln|spouse)(\s*|_|-)?(name)?$/i,
+      /father|husband|spouse|guardian|relative\s*name|rln_name|c\/o|s\/o|w\/o|d\/o/i,
     ],
-  },
-  {
-    field: 'name',
-    patterns: [
-      /^(voter|elector|full)(\s*|_|-)?name$/i,
-      /^name(\s*of\s*(voter|elector))?$/i,
-      /^fm_name$/i,
-    ],
-    antiPatterns: [/father|mother|husband|guardian|relative|polling|station|booth|constituency|district/i],
   },
   {
     field: 'age',
@@ -256,6 +260,21 @@ function detectFieldMapping(headers: string[]): Partial<Record<CanonicalField, s
       if (def.antiPatterns?.some((re) => re.test(trimmed))) continue;
       if (def.patterns.some((re) => re.test(trimmed))) {
         map[def.field] = header;
+        usedHeaders.add(header);
+        break;
+      }
+    }
+  }
+
+  // Fallback: if no primary 'name' column matched yet, pick any unused header containing 'name'
+  // that is not a relative or location column
+  if (!map.name) {
+    const nameAnti =
+      /father|mother|husband|wife|spouse|guardian|relative|relation|rln|polling|station|booth|constituency|district|file|sheet|ward|village|street|colony|area|locality/i;
+    for (const header of headers) {
+      if (usedHeaders.has(header)) continue;
+      if (/\bname\b/i.test(header) && !nameAnti.test(header)) {
+        map.name = header;
         usedHeaders.add(header);
         break;
       }

@@ -13,14 +13,6 @@ export type CanonicalField =
   | 'constituency'
   | 'district';
 
-export interface AuthUser {
-  id: string;
-  username: string;
-  displayName: string;
-  role: 'admin' | 'officer';
-  createdAt?: string;
-}
-
 export interface WorksheetMeta {
   name: string;
   rowCount: number;
@@ -70,7 +62,7 @@ export interface RecentSearchEntry {
   timestamp: string;
 }
 
-export type SearchScope = 'all' | 'name' | 'voterId' | 'houseNumber' | 'relativeName';
+export type SearchScope = 'direct' | 'name' | 'voterId' | 'houseNumber' | 'relativeName' | 'all';
 export type SortOption =
   | 'relevance'
   | 'name_asc'

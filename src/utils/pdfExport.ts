@@ -1,11 +1,7 @@
 import { jsPDF } from 'jspdf';
 import type { PublicVoterRecord } from '../types.ts';
 
-export function downloadVoterPdf(
-  voter: PublicVoterRecord,
-  fileName: string,
-  officerName: string
-): void {
+export function downloadVoterPdf(voter: PublicVoterRecord, fileName: string): void {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -37,20 +33,18 @@ export function downloadVoterPdf(
   let y = 38;
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(margin, y, contentWidth, 20, 2, 2, 'FD');
+  doc.roundedRect(margin, y, contentWidth, 18, 2, 2, 'FD');
 
   doc.setTextColor(71, 85, 105);
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
   doc.text('SOURCE FILE:', margin + 4, y + 6.5);
-  doc.text('WORKSHEET & ROW:', margin + 4, y + 13.5);
-  doc.text('AUTHORIZED OFFICER:', margin + contentWidth / 2, y + 6.5);
+  doc.text('WORKSHEET & ROW:', margin + 4, y + 13);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(15, 23, 42);
-  doc.text(fileName.slice(0, 40), margin + 29, y + 6.5);
-  doc.text(`${voter.sheetName} · Row #${voter.excelRowNumber}`, margin + 39, y + 13.5);
-  doc.text(officerName.slice(0, 34), margin + contentWidth / 2 + 37, y + 6.5);
+  doc.text(fileName.slice(0, 65), margin + 30, y + 6.5);
+  doc.text(`${voter.sheetName} · Row #${voter.excelRowNumber}`, margin + 40, y + 13);
 
   // Primary Name Heading
   y += 28;

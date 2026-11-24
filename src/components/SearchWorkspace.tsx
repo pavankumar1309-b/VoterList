@@ -22,7 +22,7 @@ import type {
 import { FileUploadPanel } from './FileUploadPanel.tsx';
 
 interface SearchWorkspaceProps {
-  authToken: string;
+  sessionId: string;
   dataset: DatasetSummary | null;
   initialQuery?: string;
   initialScope?: SearchScope;
@@ -35,10 +35,10 @@ interface SearchWorkspaceProps {
 }
 
 export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
-  authToken,
+  sessionId,
   dataset,
   initialQuery = '',
-  initialScope = 'all',
+  initialScope = 'direct',
   initialPollingStation = 'all',
   onUploadSuccess,
   onPurgeSession,
@@ -106,9 +106,9 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
 
     const timer = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ q: trimmed, sheet });
+        const params = new URLSearchParams({ q: trimmed, sheet, scope });
         const res = await fetch(`/api/voters/suggest?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { 'X-Session-Id': sessionId },
         });
         if (!res.ok) return;
         const data = (await res.json()) as { suggestions: PublicVoterRecord[] };
@@ -120,7 +120,7 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
     }, 160);
 
     return () => clearTimeout(timer);
-  }, [query, sheet, dataset, authToken]);
+  }, [query, sheet, scope, dataset, sessionId]);
 
   const executeSearch = useCallback(
     async (recordHistory: boolean) => {
@@ -145,7 +145,7 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
         }
 
         const res = await fetch(`/api/voters/search?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { 'X-Session-Id': sessionId },
         });
         const data = (await res.json()) as SearchResponse & { error?: string };
         if (!res.ok) {
@@ -173,7 +173,7 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
       maxAge,
       sort,
       page,
-      authToken,
+      sessionId,
       onSearchExecuted,
     ]
   );
@@ -209,7 +209,7 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
   const handleResetAll = () => {
     setQuery('');
     setSubmittedQuery('');
-    setScope('all');
+    setScope('direct');
     setSheet('all');
     setGender('all');
     setPollingStation('all');
@@ -247,7 +247,7 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
         <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-10">
           <div className="max-w-3xl">
             <p className="text-xs font-semibold tracking-wide text-[#B45309]">
-              Authorized Electoral Roll Lookup
+              Electoral Roll Lookup
             </p>
             <h1 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#0F2942] text-balance">
               Search Large Voter Lists Instantly from Excel
@@ -261,7 +261,7 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
         </div>
 
         <FileUploadPanel
-          authToken={authToken}
+          sessionId={sessionId}
           dataset={null}
           compact
           onUploadSuccess={onUploadSuccess}
@@ -399,11 +399,12 @@ export const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
               aria-label="Search field scope"
               className="rounded-lg border border-slate-300 bg-white px-3.5 py-3 text-sm font-medium text-slate-700 focus:border-[#0F2942] focus:outline-none"
             >
-              <option value="all">All Key Fields</option>
-              <option value="name">Voter Name</option>
-              <option value="voterId">EPIC / Voter ID</option>
-              <option value="houseNumber">House Number</option>
-              <option value="relativeName">Relative Name</option>
+              <option value="direct">Direct Voter Search (Name / ID / House)</option>
+              <option value="name">Voter Name Only</option>
+              <option value="voterId">EPIC / Voter ID Only</option>
+              <option value="houseNumber">House Number Only</option>
+              <option value="relativeName">Relative Name Only</option>
+              <option value="all">All Columns (Include Relative)</option>
             </select>
 
             <button

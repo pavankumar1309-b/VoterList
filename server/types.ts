@@ -75,22 +75,10 @@ export interface RecentSearchEntry {
   timestamp: string;
 }
 
-export interface AuthUser {
-  id: string;
-  username: string;
-  displayName: string;
-  role: 'admin' | 'officer';
-  createdAt: string;
-}
-
 export interface SessionState {
-  tokenId: string;
-  userId: string;
-  username: string;
-  displayName: string;
-  role: 'admin' | 'officer';
+  sessionId: string;
   createdAt: number;
-  expiresAt: number;
+  lastAccessedAt: number;
   dataset: VoterDataset | null;
   searchHistory: RecentSearchEntry[];
   recentVoters: PublicVoterRecord[];

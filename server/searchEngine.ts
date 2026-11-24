@@ -1,7 +1,7 @@
 import { normalizeText, phoneticNormalize } from './excelParser.ts';
 import type { IndexedVoterRecord, PublicVoterRecord, VoterDataset } from './types.ts';
 
-export type SearchScope = 'all' | 'name' | 'voterId' | 'houseNumber' | 'relativeName';
+export type SearchScope = 'direct' | 'name' | 'voterId' | 'houseNumber' | 'relativeName' | 'all';
 export type SortOption =
   | 'relevance'
   | 'name_asc'
@@ -73,90 +73,60 @@ function scoreRecord(
   compactQuery: string,
   queryTokens: string[],
   phoneticQuery: string,
-  scope: SearchScope
+  scope: SearchScope,
+  sheetHasNameColumn: boolean
 ): number {
   if (!normQuery) return 1;
 
   let score = 0;
 
   // 1. EPIC / Voter ID matching
-  if (scope === 'all' || scope === 'voterId') {
+  if (scope === 'direct' || scope === 'all' || scope === 'voterId') {
     if (record.normVoterId) {
       if (record.normVoterId === compactQuery) {
         score = Math.max(score, 1000);
       } else if (record.normVoterId.startsWith(compactQuery)) {
-        score = Math.max(score, 850);
+        score = Math.max(score, 890);
       } else if (record.normVoterId.includes(compactQuery)) {
-        score = Math.max(score, 650);
-      }
-    }
-  }
-
-  // 2. House Number matching
-  if (scope === 'all' || scope === 'houseNumber') {
-    if (record.normHouseNumber) {
-      if (record.normHouseNumber === normQuery) {
-        score = Math.max(score, 900);
-      } else if (record.normHouseNumber.startsWith(normQuery)) {
-        score = Math.max(score, 720);
-      } else if (record.normHouseNumber.includes(normQuery)) {
-        score = Math.max(score, 540);
-      }
-    }
-  }
-
-  // 3. Relative / Father / Husband Name matching
-  if (scope === 'all' || scope === 'relativeName') {
-    if (record.normRelativeName) {
-      if (record.normRelativeName === normQuery) {
-        score = Math.max(score, 880);
-      } else if (record.normRelativeName.startsWith(normQuery)) {
         score = Math.max(score, 700);
-      } else if (record.normRelativeName.includes(normQuery)) {
-        score = Math.max(score, 520);
-      } else if (
-        queryTokens.length > 0 &&
-        queryTokens.every((t) => record.normRelativeName.includes(t))
-      ) {
-        score = Math.max(score, 460);
       }
     }
   }
 
-  // 4. Primary Voter Name matching (exact, prefix, substring, out-of-order tokens, phonetic, fuzzy)
-  if (scope === 'all' || scope === 'name') {
+  // 2. Primary Voter Name matching (highest name priority: exact, prefix, substring, tokens, phonetic, fuzzy)
+  if (scope === 'direct' || scope === 'all' || scope === 'name') {
     if (record.normName) {
       if (record.normName === normQuery) {
-        score = Math.max(score, 980);
+        score = Math.max(score, 990);
       } else if (record.normName.startsWith(normQuery)) {
-        score = Math.max(score, 860);
+        score = Math.max(score, 920);
       } else if (record.normName.includes(normQuery)) {
-        score = Math.max(score, 740);
+        score = Math.max(score, 840);
       } else if (
         queryTokens.length > 0 &&
         queryTokens.every((qt) =>
           record.nameTokens.some((nt) => nt.startsWith(qt) || nt.includes(qt))
         )
       ) {
-        score = Math.max(score, 680);
+        score = Math.max(score, 780);
       } else if (phoneticQuery && record.phoneticName) {
         const phoneticTokens = phoneticQuery.split(' ');
         const recordPhoneticTokens = record.phoneticName.split(' ');
         if (record.phoneticName === phoneticQuery) {
-          score = Math.max(score, 600);
+          score = Math.max(score, 660);
         } else if (record.phoneticName.includes(phoneticQuery)) {
-          score = Math.max(score, 500);
+          score = Math.max(score, 580);
         } else if (
           phoneticTokens.length > 0 &&
           phoneticTokens.every((pt) =>
             recordPhoneticTokens.some((rpt) => rpt.startsWith(pt) || (pt.length >= 4 && rpt.includes(pt)))
           )
         ) {
-          score = Math.max(score, 440);
+          score = Math.max(score, 520);
         }
       }
 
-      // Token-level bounded edit distance for minor typos (tokens length >= 4)
+      // Token-level bounded edit distance for minor typos (tokens length >= 3)
       if (score === 0 && queryTokens.length > 0 && queryTokens.length <= 4 && record.nameTokens.length > 0) {
         let matchedFuzzyTokens = 0;
         for (const qt of queryTokens) {
@@ -169,18 +139,50 @@ function scoreRecord(
           if (matched) matchedFuzzyTokens++;
         }
         if (matchedFuzzyTokens === queryTokens.filter((t) => t.length >= 3).length && matchedFuzzyTokens > 0) {
-          score = Math.max(score, 320);
+          score = Math.max(score, 420);
         }
       }
     }
   }
 
-  // 5. Fallback across all columns when scope is 'all'
-  if (score === 0 && scope === 'all') {
+  // 3. House Number matching
+  if (scope === 'direct' || scope === 'all' || scope === 'houseNumber') {
+    if (record.normHouseNumber) {
+      if (record.normHouseNumber === normQuery) {
+        score = Math.max(score, 860);
+      } else if (record.normHouseNumber.startsWith(normQuery)) {
+        score = Math.max(score, 720);
+      } else if (record.normHouseNumber.includes(normQuery)) {
+        score = Math.max(score, 560);
+      }
+    }
+  }
+
+  // 4. Relative / Father / Husband Name matching (ONLY when explicitly requested or 'all')
+  if (scope === 'relativeName' || scope === 'all') {
+    const baseBoost = scope === 'relativeName' ? 380 : 0;
+    if (record.normRelativeName) {
+      if (record.normRelativeName === normQuery) {
+        score = Math.max(score, 500 + baseBoost);
+      } else if (record.normRelativeName.startsWith(normQuery)) {
+        score = Math.max(score, 440 + baseBoost);
+      } else if (record.normRelativeName.includes(normQuery)) {
+        score = Math.max(score, 360 + baseBoost);
+      } else if (
+        queryTokens.length > 0 &&
+        queryTokens.every((t) => record.normRelativeName.includes(t))
+      ) {
+        score = Math.max(score, 300 + baseBoost);
+      }
+    }
+  }
+
+  // 5. Fallback across all columns when scope is 'all' (or if sheet has no detected Name column in 'direct')
+  if (score === 0 && (scope === 'all' || (scope === 'direct' && !sheetHasNameColumn))) {
     if (record.normAllText.includes(normQuery)) {
-      score = 260;
+      score = 240;
     } else if (queryTokens.length > 1 && queryTokens.every((t) => record.normAllText.includes(t))) {
-      score = 220;
+      score = 200;
     }
   }
 
@@ -194,11 +196,16 @@ function parseSerial(raw: string | undefined): number {
 }
 
 export function searchVoters(dataset: VoterDataset, params: SearchParams): SearchResponse {
-  const scope: SearchScope = params.scope || 'all';
+  const scope: SearchScope = params.scope || 'direct';
   const normQuery = normalizeText(params.query || '');
   const compactQuery = normQuery.replace(/\s+/g, '');
   const queryTokens = normQuery ? normQuery.split(' ') : [];
   const phoneticQuery = phoneticNormalize(params.query || '');
+
+  const sheetHasNameMap = new Map<string, boolean>();
+  for (const s of dataset.sheets) {
+    sheetHasNameMap.set(s.name, Boolean(s.fieldMap.name));
+  }
 
   const sheetFilter = params.sheet && params.sheet !== 'all' ? params.sheet : null;
   const genderFilter = params.gender && params.gender !== 'all' ? params.gender : null;
@@ -225,7 +232,15 @@ export function searchVoters(dataset: VoterDataset, params: SearchParams): Searc
       continue;
     }
 
-    const s = scoreRecord(rec, normQuery, compactQuery, queryTokens, phoneticQuery, scope);
+    const s = scoreRecord(
+      rec,
+      normQuery,
+      compactQuery,
+      queryTokens,
+      phoneticQuery,
+      scope,
+      sheetHasNameMap.get(rec.sheetName) ?? true
+    );
     if (s > 0) {
       scored.push({ record: rec, score: s });
     }
@@ -273,6 +288,7 @@ export function getSearchSuggestions(
   dataset: VoterDataset,
   query: string,
   sheet?: string,
+  scope: SearchScope = 'direct',
   limit = 8
 ): PublicVoterRecord[] {
   const normQuery = normalizeText(query);
@@ -280,7 +296,7 @@ export function getSearchSuggestions(
 
   const res = searchVoters(dataset, {
     query,
-    scope: 'all',
+    scope,
     sheet,
     sort: 'relevance',
     page: 1,

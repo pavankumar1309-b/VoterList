@@ -4,18 +4,6 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import {
-  authenticateUser,
-  claimInitialAdmin,
-  createAuthorizedOfficer,
-  deleteAuthorizedOfficer,
-  destroySession,
-  isAccessCodeConfigured,
-  isFirstRunSetupRequired,
-  listAuthorizedOfficers,
-  requireAuth,
-  type AuthenticatedRequest,
-} from './server/auth.ts';
 import { parseVoterWorkbook } from './server/excelParser.ts';
 import {
   getSearchSuggestions,
@@ -24,6 +12,7 @@ import {
   type SearchScope,
   type SortOption,
 } from './server/searchEngine.ts';
+import { attachSession, purgeSession, type SessionRequest } from './server/session.ts';
 
 dotenv.config();
 
@@ -59,128 +48,8 @@ async function startServer() {
     next();
   });
 
-  // --- Auth Routes ---
-  app.get('/api/auth/status', (_req, res) => {
-    res.json({
-      needsSetup: isFirstRunSetupRequired(),
-      accessCodeConfigured: isAccessCodeConfigured(),
-    });
-  });
-
-  app.post('/api/auth/setup', (req, res) => {
-    const body = req.body as { username?: unknown; displayName?: unknown; password?: unknown };
-    if (
-      typeof body.username !== 'string' ||
-      typeof body.displayName !== 'string' ||
-      typeof body.password !== 'string'
-    ) {
-      res.status(400).json({ error: 'Officer ID, full name, and password are required.' });
-      return;
-    }
-
-    const result = claimInitialAdmin(body.username, body.displayName, body.password);
-    if (!result.ok) {
-      res.status(result.status).json({ error: result.error });
-      return;
-    }
-
-    res.status(201).json({
-      user: result.user,
-      token: result.token,
-    });
-  });
-
-  app.post('/api/auth/login', (req, res) => {
-    const body = req.body as { username?: unknown; password?: unknown };
-    if (typeof body.username !== 'string' || typeof body.password !== 'string') {
-      res.status(400).json({ error: 'Officer ID and password are required.' });
-      return;
-    }
-
-    const result = authenticateUser(body.username, body.password);
-    if (!result.ok) {
-      res.status(result.status).json({ error: result.error });
-      return;
-    }
-
-    res.json({
-      user: result.user,
-      token: result.token,
-    });
-  });
-
-  app.post('/api/auth/logout', requireAuth, (req: AuthenticatedRequest, res) => {
-    if (req.session) {
-      destroySession(req.session.tokenId);
-    }
-    res.json({ ok: true });
-  });
-
-  app.get('/api/auth/me', requireAuth, (req: AuthenticatedRequest, res) => {
-    const session = req.session!;
-    res.json({
-      user: {
-        id: session.userId,
-        username: session.username,
-        displayName: session.displayName,
-        role: session.role,
-      },
-      hasDataset: Boolean(session.dataset),
-    });
-  });
-
-  app.get('/api/auth/users', requireAuth, (req: AuthenticatedRequest, res) => {
-    if (req.session!.role !== 'admin') {
-      res.status(403).json({ error: 'Administrator privileges required.' });
-      return;
-    }
-    res.json({ users: listAuthorizedOfficers() });
-  });
-
-  app.post('/api/auth/users', requireAuth, (req: AuthenticatedRequest, res) => {
-    if (req.session!.role !== 'admin') {
-      res.status(403).json({ error: 'Administrator privileges required.' });
-      return;
-    }
-    const body = req.body as {
-      username?: unknown;
-      displayName?: unknown;
-      password?: unknown;
-      role?: unknown;
-    };
-    if (
-      typeof body.username !== 'string' ||
-      typeof body.displayName !== 'string' ||
-      typeof body.password !== 'string'
-    ) {
-      res.status(400).json({ error: 'Officer ID, full name, and password are required.' });
-      return;
-    }
-    const role = body.role === 'admin' ? 'admin' : 'officer';
-    const result = createAuthorizedOfficer(body.username, body.displayName, body.password, role);
-    if (!result.ok) {
-      res.status(result.status).json({ error: result.error });
-      return;
-    }
-    res.status(201).json({ user: result.user });
-  });
-
-  app.delete('/api/auth/users/:id', requireAuth, (req: AuthenticatedRequest, res) => {
-    if (req.session!.role !== 'admin') {
-      res.status(403).json({ error: 'Administrator privileges required.' });
-      return;
-    }
-    const targetId = String(req.params.id || '');
-    const removed = deleteAuthorizedOfficer(targetId, req.session!.userId);
-    if (!removed) {
-      res.status(400).json({ error: 'Cannot remove this officer account.' });
-      return;
-    }
-    res.json({ ok: true });
-  });
-
-  // --- Excel Upload & Dataset Routes (Protected) ---
-  app.post('/api/upload', requireAuth, (req: AuthenticatedRequest, res) => {
+  // --- Excel Upload & Search Routes (Direct Session Access, No Sign-In Required) ---
+  app.post('/api/upload', attachSession, (req: SessionRequest, res) => {
     upload.single('file')(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
@@ -201,7 +70,6 @@ async function startServer() {
         const safeFileName = path.basename(file.originalname || 'voter_list.xlsx');
         const dataset = parseVoterWorkbook(safeFileName, file.buffer);
 
-        // Store strictly in authenticated session memory; reset prior search state
         req.session!.dataset = dataset;
         req.session!.searchHistory = [];
         req.session!.recentVoters = [];
@@ -221,7 +89,7 @@ async function startServer() {
     });
   });
 
-  app.get('/api/dashboard', requireAuth, (req: AuthenticatedRequest, res) => {
+  app.get('/api/dashboard', attachSession, (req: SessionRequest, res) => {
     const session = req.session!;
     if (!session.dataset) {
       res.json({
@@ -247,7 +115,7 @@ async function startServer() {
     });
   });
 
-  app.get('/api/voters/suggest', requireAuth, (req: AuthenticatedRequest, res) => {
+  app.get('/api/voters/suggest', attachSession, (req: SessionRequest, res) => {
     const session = req.session!;
     if (!session.dataset) {
       res.json({ suggestions: [] });
@@ -255,11 +123,23 @@ async function startServer() {
     }
     const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 120) : '';
     const sheet = typeof req.query.sheet === 'string' ? req.query.sheet : undefined;
-    const suggestions = getSearchSuggestions(session.dataset, q, sheet, 8);
+    const validScopes = new Set<SearchScope>([
+      'direct',
+      'name',
+      'voterId',
+      'houseNumber',
+      'relativeName',
+      'all',
+    ]);
+    const rawScope = typeof req.query.scope === 'string' ? req.query.scope : 'direct';
+    const scope: SearchScope = validScopes.has(rawScope as SearchScope)
+      ? (rawScope as SearchScope)
+      : 'direct';
+    const suggestions = getSearchSuggestions(session.dataset, q, sheet, scope, 8);
     res.json({ suggestions });
   });
 
-  app.get('/api/voters/search', requireAuth, (req: AuthenticatedRequest, res) => {
+  app.get('/api/voters/search', attachSession, (req: SessionRequest, res) => {
     const session = req.session!;
     if (!session.dataset) {
       res.status(400).json({ error: 'No voter list uploaded in the current session.' });
@@ -267,11 +147,18 @@ async function startServer() {
     }
 
     const query = typeof req.query.q === 'string' ? req.query.q.slice(0, 150) : '';
-    const validScopes = new Set<SearchScope>(['all', 'name', 'voterId', 'houseNumber', 'relativeName']);
-    const rawScope = typeof req.query.scope === 'string' ? req.query.scope : 'all';
+    const validScopes = new Set<SearchScope>([
+      'direct',
+      'name',
+      'voterId',
+      'houseNumber',
+      'relativeName',
+      'all',
+    ]);
+    const rawScope = typeof req.query.scope === 'string' ? req.query.scope : 'direct';
     const scope: SearchScope = validScopes.has(rawScope as SearchScope)
       ? (rawScope as SearchScope)
-      : 'all';
+      : 'direct';
 
     const validSorts = new Set<SortOption>([
       'relevance',
@@ -335,7 +222,7 @@ async function startServer() {
     res.json(response);
   });
 
-  app.get('/api/voters/:id', requireAuth, (req: AuthenticatedRequest, res) => {
+  app.get('/api/voters/:id', attachSession, (req: SessionRequest, res) => {
     const session = req.session!;
     if (!session.dataset) {
       res.status(404).json({ error: 'No active voter dataset.' });
@@ -358,7 +245,7 @@ async function startServer() {
     res.json({ voter: publicRecord });
   });
 
-  app.get('/api/history', requireAuth, (req: AuthenticatedRequest, res) => {
+  app.get('/api/history', attachSession, (req: SessionRequest, res) => {
     const session = req.session!;
     res.json({
       searchHistory: session.searchHistory,
@@ -366,18 +253,17 @@ async function startServer() {
     });
   });
 
-  app.delete('/api/history', requireAuth, (req: AuthenticatedRequest, res) => {
+  app.delete('/api/history', attachSession, (req: SessionRequest, res) => {
     const session = req.session!;
     session.searchHistory = [];
     session.recentVoters = [];
     res.json({ ok: true });
   });
 
-  app.post('/api/session/purge', requireAuth, (req: AuthenticatedRequest, res) => {
-    const session = req.session!;
-    session.dataset = null;
-    session.searchHistory = [];
-    session.recentVoters = [];
+  app.post('/api/session/purge', attachSession, (req: SessionRequest, res) => {
+    if (req.session) {
+      purgeSession(req.session.sessionId);
+    }
     res.json({ ok: true });
   });
 

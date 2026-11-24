@@ -6,14 +6,12 @@ import { downloadVoterPdf } from '../utils/pdfExport.ts';
 interface VoterDetailModalProps {
   voter: PublicVoterRecord | null;
   fileName: string;
-  officerName: string;
   onClose: () => void;
 }
 
 export const VoterDetailModal: React.FC<VoterDetailModalProps> = ({
   voter,
   fileName,
-  officerName,
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
@@ -184,7 +182,7 @@ export const VoterDetailModal: React.FC<VoterDetailModalProps> = ({
         {/* Footer Actions */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
           <p className="text-xs text-slate-500">
-            Single-record extract for authorized inspection only.
+            Single-record extract from the uploaded electoral roll.
           </p>
           <div className="flex items-center gap-3">
             <button
@@ -196,7 +194,7 @@ export const VoterDetailModal: React.FC<VoterDetailModalProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => downloadVoterPdf(voter, fileName, officerName)}
+              onClick={() => downloadVoterPdf(voter, fileName)}
               className="inline-flex items-center gap-2 rounded-lg bg-[#0F2942] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#173B5E] whitespace-nowrap"
             >
               <Download className="h-3.5 w-3.5" />

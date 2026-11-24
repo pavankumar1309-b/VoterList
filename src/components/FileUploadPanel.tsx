@@ -11,7 +11,7 @@ import {
 import type { DatasetSummary } from '../types.ts';
 
 interface FileUploadPanelProps {
-  authToken: string;
+  sessionId: string;
   dataset: DatasetSummary | null;
   compact?: boolean;
   onUploadSuccess: (summary: DatasetSummary) => void;
@@ -26,7 +26,7 @@ function formatBytes(bytes: number): string {
 }
 
 export const FileUploadPanel: React.FC<FileUploadPanelProps> = ({
-  authToken,
+  sessionId,
   dataset,
   compact = false,
   onUploadSuccess,
@@ -58,7 +58,7 @@ export const FileUploadPanel: React.FC<FileUploadPanelProps> = ({
       const res = await fetch('/api/upload', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          'X-Session-Id': sessionId,
         },
         body: formData,
       });
